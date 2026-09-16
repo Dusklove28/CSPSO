@@ -1,5 +1,10 @@
 # MAPPO
 
+## Credit Assignment PSO Fork
+
+This fork adds the sparse-intervention credit-assignment PSO experiment in
+`docs/credit_assignment_pso.md`. The original MAPPO README is kept below.
+
 ## New Update！！！We support SMAC V2 now～
 
 Chao Yu*, Akash Velu*, Eugene Vinitsky, Jiaxuan Gao, Yu Wang, Alexandre Bayen, and Yi Wu. 

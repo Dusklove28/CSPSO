@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import copy
 from onpolicy.algorithms.utils.util import init, check
 from onpolicy.algorithms.utils.cnn import CNNBase
 from onpolicy.algorithms.utils.mlp import MLPBase
@@ -116,6 +117,21 @@ class R_Actor(nn.Module):
 
         return action_log_probs, dist_entropy
 
+    def get_probs(self, obs, rnn_states, masks, available_actions=None):
+        """Return current action probabilities for counterfactual baselines."""
+        obs = check(obs).to(**self.tpdv)
+        rnn_states = check(rnn_states).to(**self.tpdv)
+        masks = check(masks).to(**self.tpdv)
+        if available_actions is not None:
+            available_actions = check(available_actions).to(**self.tpdv)
+
+        actor_features = self.base(obs)
+
+        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
+            actor_features, _ = self.rnn(actor_features, rnn_states, masks)
+
+        return self.act.get_probs(actor_features, available_actions)
+
 
 class R_Critic(nn.Module):
     """
@@ -127,7 +143,7 @@ class R_Critic(nn.Module):
     """
     def __init__(self, args, cent_obs_space, device=torch.device("cpu")):
         super(R_Critic, self).__init__()
-        self.hidden_size = args.hidden_size
+        self.hidden_size = getattr(args, "critic_hidden_size", None) or args.hidden_size
         self._use_orthogonal = args.use_orthogonal
         self._use_naive_recurrent_policy = args.use_naive_recurrent_policy
         self._use_recurrent_policy = args.use_recurrent_policy
@@ -138,7 +154,9 @@ class R_Critic(nn.Module):
 
         cent_obs_shape = get_shape_from_obs_space(cent_obs_space)
         base = CNNBase if len(cent_obs_shape) == 3 else MLPBase
-        self.base = base(args, cent_obs_shape)
+        critic_args = copy.copy(args)
+        critic_args.hidden_size = self.hidden_size
+        self.base = base(critic_args, cent_obs_shape)
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)

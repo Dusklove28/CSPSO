@@ -291,6 +291,39 @@ def get_config():
 
     # pretrained parameters
     parser.add_argument("--model_dir", type=str, default=None, help="by default None. set the path to pretrained model.")
+
+    # PSO credit-assignment experiment parameters.
+    parser.add_argument("--credit_mode", type=str, default="mappo",
+                        choices=["mappo", "cf_no_intervention", "cf_intervention", "cf_intervention_shuffled"],
+                        help="PSO credit assignment mode.")
+    parser.add_argument("--use_counterfactual_credit", action='store_true', default=False)
+    parser.add_argument("--use_cf_advantage", action='store_true', default=False)
+    parser.add_argument("--use_cf_intervention_loss", action='store_true', default=False)
+    parser.add_argument("--cf_shuffle_labels", action='store_true', default=False)
+    parser.add_argument("--cf_hidden_size", type=int, default=128)
+    parser.add_argument("--critic_hidden_size", type=int, default=None)
+    parser.add_argument("--cf_lr", type=float, default=3e-4)
+    parser.add_argument("--cf_epoch", type=int, default=1)
+    parser.add_argument("--cf_ordinary_loss_coef", type=float, default=1.0)
+    parser.add_argument("--cf_intervention_loss_coef", type=float, default=1.0)
+    parser.add_argument("--pso_particles", type=int, default=20)
+    parser.add_argument("--pso_dim", type=int, default=10)
+    parser.add_argument("--pso_generations", type=int, default=100)
+    parser.add_argument("--pso_objective", type=str, default="rastrigin",
+                        choices=["sphere", "rastrigin", "rosenbrock", "ackley"])
+    parser.add_argument("--pso_lower_bound", type=float, default=None)
+    parser.add_argument("--pso_upper_bound", type=float, default=None)
+    parser.add_argument("--pso_chi", type=float, default=0.72984)
+    parser.add_argument("--pso_c1", type=float, default=2.05)
+    parser.add_argument("--pso_c2", type=float, default=2.05)
+    parser.add_argument("--pso_boundary", type=str, default="clip",
+                        choices=["clip", "clip_zero_velocity", "none"])
+    parser.add_argument("--pso_initial_velocity_scale", type=float, default=0.1)
+    parser.add_argument("--pso_scale_floor", type=float, default=1.0)
+    parser.add_argument("--pso_intervention_interval", type=int, default=4)
+    parser.add_argument("--pso_interventions_per_event", type=int, default=1)
+    parser.add_argument("--pso_intervention_warmup_episodes", type=int, default=0)
+    parser.add_argument("--pso_cf_branch_deterministic", action='store_true', default=False)
     
     # add for transformer
     parser.add_argument("--encode_state", action='store_true', default=False)

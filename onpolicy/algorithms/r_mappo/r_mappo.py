@@ -39,6 +39,15 @@ class R_MAPPO():
         self._use_valuenorm = args.use_valuenorm
         self._use_value_active_masks = args.use_value_active_masks
         self._use_policy_active_masks = args.use_policy_active_masks
+        self._use_counterfactual_credit = getattr(args, "use_counterfactual_credit", False)
+        self._use_cf_advantage = getattr(args, "use_cf_advantage", False)
+        self._use_cf_intervention_loss = getattr(args, "use_cf_intervention_loss", False)
+        self._cf_shuffle_labels = getattr(args, "cf_shuffle_labels", False)
+        self.cf_ordinary_loss_coef = getattr(args, "cf_ordinary_loss_coef", 1.0)
+        self.cf_intervention_loss_coef = getattr(args, "cf_intervention_loss_coef", 1.0)
+        self.cf_epoch = getattr(args, "cf_epoch", 1)
+        self.cf_action_dim = getattr(self.policy.act_space, "n", 0)
+        self.cf_num_agents = int(getattr(args, "num_agents", getattr(args, "pso_particles", 1)))
         
         assert (self._use_popart and self._use_valuenorm) == False, ("self._use_popart and self._use_valuenorm can not be set True simultaneously")
         
@@ -87,6 +96,97 @@ class R_MAPPO():
             value_loss = value_loss.mean()
 
         return value_loss
+
+    def _counterfactual_arrays(self, buffer):
+        actions = buffer.actions[..., 0].astype(np.int64)
+        episode_length, n_threads, num_agents = actions.shape
+        share_obs = buffer.share_obs[:-1].reshape(episode_length, n_threads, num_agents, -1)
+        share_obs = share_obs.reshape(-1, share_obs.shape[-1]).astype(np.float32)
+        joint_context = np.repeat(actions.reshape(episode_length * n_threads, num_agents), num_agents, axis=0)
+        agent_ids = np.tile(np.arange(num_agents, dtype=np.int64), episode_length * n_threads)
+        actual_actions = actions.reshape(-1).astype(np.int64)
+        returns = buffer.returns[:-1].reshape(-1, 1).astype(np.float32)
+        active_masks = buffer.active_masks[:-1].reshape(-1, 1).astype(np.float32)
+        return share_obs, joint_context, agent_ids, actual_actions, returns, active_masks
+
+    def train_counterfactual_critic(self, buffer):
+        if self.policy.cf_critic is None:
+            return {}
+
+        share_obs, joint_context, agent_ids, actual_actions, returns, active_masks = self._counterfactual_arrays(buffer)
+        interventions = getattr(buffer, "intervention_batch", [])
+        infos = {
+            "cf_ordinary_loss": 0.0,
+            "cf_intervention_loss": 0.0,
+            "cf_total_loss": 0.0,
+            "cf_intervention_count": float(len(interventions)),
+        }
+
+        for _ in range(self.cf_epoch):
+            q_actual = self.policy.cf_critic(share_obs, joint_context, agent_ids, actual_actions)
+            target = torch.from_numpy(returns).to(**self.tpdv)
+            active = torch.from_numpy(active_masks).to(**self.tpdv)
+            ordinary_loss = (((q_actual - target) ** 2) * active).sum() / active.sum().clamp(min=1.0)
+
+            intervention_loss = torch.zeros((), **self.tpdv)
+            if self._use_cf_intervention_loss and len(interventions) > 0:
+                int_share_obs = np.stack([x["share_obs"] for x in interventions]).astype(np.float32)
+                actual_joint = np.stack([x["joint_actions"] for x in interventions]).astype(np.int64)
+                alt_joint = actual_joint.copy()
+                int_agent_ids = np.asarray([x["agent_id"] for x in interventions], dtype=np.int64)
+                actual_action = np.asarray([x["actual_action"] for x in interventions], dtype=np.int64)
+                alt_action = np.asarray([x["alternative_action"] for x in interventions], dtype=np.int64)
+                alt_joint[np.arange(len(interventions)), int_agent_ids] = alt_action
+                delta = np.asarray([x["delta"] for x in interventions], dtype=np.float32).reshape(-1, 1)
+                if self._cf_shuffle_labels and len(delta) > 1:
+                    delta = delta[np.random.permutation(len(delta))]
+
+                q_real = self.policy.cf_critic(int_share_obs, actual_joint, int_agent_ids, actual_action)
+                q_alt = self.policy.cf_critic(int_share_obs, alt_joint, int_agent_ids, alt_action)
+                delta_t = torch.from_numpy(delta).to(**self.tpdv)
+                intervention_loss = torch.mean((q_real - q_alt - delta_t) ** 2)
+
+            total_loss = (
+                self.cf_ordinary_loss_coef * ordinary_loss
+                + self.cf_intervention_loss_coef * intervention_loss
+            )
+            self.policy.cf_critic_optimizer.zero_grad()
+            total_loss.backward()
+            if self._use_max_grad_norm:
+                nn.utils.clip_grad_norm_(self.policy.cf_critic.parameters(), self.max_grad_norm)
+            self.policy.cf_critic_optimizer.step()
+
+            infos["cf_ordinary_loss"] += ordinary_loss.item()
+            infos["cf_intervention_loss"] += intervention_loss.item()
+            infos["cf_total_loss"] += total_loss.item()
+
+        infos["cf_ordinary_loss"] /= max(1, self.cf_epoch)
+        infos["cf_intervention_loss"] /= max(1, self.cf_epoch)
+        infos["cf_total_loss"] /= max(1, self.cf_epoch)
+        return infos
+
+    @torch.no_grad()
+    def compute_counterfactual_advantages(self, buffer):
+        share_obs, joint_context, agent_ids, actual_actions, _, _ = self._counterfactual_arrays(buffer)
+        obs = buffer.obs[:-1].reshape(-1, *buffer.obs.shape[3:]).astype(np.float32)
+        rnn_states = buffer.rnn_states[:-1].reshape(-1, *buffer.rnn_states.shape[3:]).astype(np.float32)
+        masks = buffer.masks[:-1].reshape(-1, 1).astype(np.float32)
+        probs = self.policy.get_action_probs(obs, rnn_states, masks)
+        probs = probs.detach().cpu().numpy().astype(np.float32)
+
+        q_values = []
+        rows = np.arange(joint_context.shape[0])
+        for candidate in range(self.cf_action_dim):
+            candidate_joint = joint_context.copy()
+            candidate_joint[rows, agent_ids] = candidate
+            candidate_actions = np.full(joint_context.shape[0], candidate, dtype=np.int64)
+            q_candidate = self.policy.cf_critic(share_obs, candidate_joint, agent_ids, candidate_actions)
+            q_values.append(q_candidate.detach().cpu().numpy())
+        q_values = np.concatenate(q_values, axis=1)
+        q_actual = q_values[rows, actual_actions]
+        baseline = np.sum(probs * q_values, axis=1)
+        advantages = (q_actual - baseline).reshape(buffer.rewards.shape)
+        return advantages.astype(np.float32)
 
     def ppo_update(self, sample, update_actor=True):
         """
@@ -176,7 +276,13 @@ class R_MAPPO():
 
         :return train_info: (dict) contains information regarding training update (e.g. loss, grad norms, etc).
         """
-        if self._use_popart or self._use_valuenorm:
+        cf_infos = {}
+        if self._use_counterfactual_credit:
+            cf_infos = self.train_counterfactual_critic(buffer)
+
+        if self._use_counterfactual_credit and self._use_cf_advantage:
+            advantages = self.compute_counterfactual_advantages(buffer)
+        elif self._use_popart or self._use_valuenorm:
             advantages = buffer.returns[:-1] - self.value_normalizer.denormalize(buffer.value_preds[:-1])
         else:
             advantages = buffer.returns[:-1] - buffer.value_preds[:-1]
@@ -220,13 +326,19 @@ class R_MAPPO():
 
         for k in train_info.keys():
             train_info[k] /= num_updates
+
+        train_info.update(cf_infos)
  
         return train_info
 
     def prep_training(self):
         self.policy.actor.train()
         self.policy.critic.train()
+        if self.policy.cf_critic is not None:
+            self.policy.cf_critic.train()
 
     def prep_rollout(self):
         self.policy.actor.eval()
         self.policy.critic.eval()
+        if self.policy.cf_critic is not None:
+            self.policy.cf_critic.eval()

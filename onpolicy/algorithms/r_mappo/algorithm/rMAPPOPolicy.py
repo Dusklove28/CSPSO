@@ -1,5 +1,6 @@
 import torch
 from onpolicy.algorithms.r_mappo.algorithm.r_actor_critic import R_Actor, R_Critic
+from onpolicy.algorithms.r_mappo.algorithm.counterfactual_critic import CounterfactualCritic
 from onpolicy.utils.util import update_linear_schedule
 
 
@@ -27,6 +28,7 @@ class R_MAPPOPolicy:
 
         self.actor = R_Actor(args, self.obs_space, self.act_space, self.device)
         self.critic = R_Critic(args, self.share_obs_space, self.device)
+        self.cf_critic = None
 
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),
                                                 lr=self.lr, eps=self.opti_eps,
@@ -35,6 +37,16 @@ class R_MAPPOPolicy:
                                                  lr=self.critic_lr,
                                                  eps=self.opti_eps,
                                                  weight_decay=self.weight_decay)
+        if getattr(args, "use_counterfactual_credit", False):
+            action_dim = self.act_space.n
+            num_agents = int(getattr(args, "num_agents", getattr(args, "pso_particles", 1)))
+            self.cf_critic = CounterfactualCritic(args, self.share_obs_space, num_agents, action_dim, self.device)
+            self.cf_critic_optimizer = torch.optim.Adam(
+                self.cf_critic.parameters(),
+                lr=getattr(args, "cf_lr", self.critic_lr),
+                eps=self.opti_eps,
+                weight_decay=self.weight_decay,
+            )
 
     def lr_decay(self, episode, episodes):
         """
@@ -125,3 +137,6 @@ class R_MAPPOPolicy:
         """
         actions, _, rnn_states_actor = self.actor(obs, rnn_states_actor, masks, available_actions, deterministic)
         return actions, rnn_states_actor
+
+    def get_action_probs(self, obs, rnn_states_actor, masks, available_actions=None):
+        return self.actor.get_probs(obs, rnn_states_actor, masks, available_actions)

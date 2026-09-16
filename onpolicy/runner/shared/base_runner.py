@@ -1,9 +1,45 @@
-import wandb
+import json
 import os
 import numpy as np
 import torch
-from tensorboardX import SummaryWriter
 from onpolicy.utils.shared_buffer import SharedReplayBuffer
+
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
+try:
+    from tensorboardX import SummaryWriter
+except ImportError:
+    class SummaryWriter(object):
+        def __init__(self, log_dir):
+            self.log_dir = log_dir
+            self.scalars = {}
+
+        def add_scalars(self, tag, values, step):
+            self.scalars.setdefault(tag, []).append({"step": int(step), "values": self._to_jsonable(values)})
+
+        def export_scalars_to_json(self, path):
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self.scalars, f, indent=2)
+
+        def close(self):
+            pass
+
+        def _to_jsonable(self, value):
+            if isinstance(value, dict):
+                return {k: self._to_jsonable(v) for k, v in value.items()}
+            if isinstance(value, np.ndarray):
+                return value.tolist()
+            if hasattr(value, "detach"):
+                value = value.detach().cpu()
+                if value.numel() == 1:
+                    return float(value.item())
+                return value.numpy().tolist()
+            if isinstance(value, (np.integer, np.floating)):
+                return value.item()
+            return value
 
 def _t2n(x):
     """Convert torch tensor to a numpy array."""
@@ -51,6 +87,8 @@ class Runner(object):
         self.model_dir = self.all_args.model_dir
 
         if self.use_wandb:
+            if wandb is None:
+                raise ImportError("wandb is not installed. Disable wandb logging with the inherited --use_wandb flag.")
             self.save_dir = str(wandb.run.dir)
             self.run_dir = str(wandb.run.dir)
         else:
@@ -149,6 +187,8 @@ class Runner(object):
             torch.save(policy_actor.state_dict(), str(self.save_dir) + "/actor.pt")
             policy_critic = self.trainer.policy.critic
             torch.save(policy_critic.state_dict(), str(self.save_dir) + "/critic.pt")
+            if getattr(self.trainer.policy, "cf_critic", None) is not None:
+                torch.save(self.trainer.policy.cf_critic.state_dict(), str(self.save_dir) + "/cf_critic.pt")
 
     def restore(self, model_dir):
         """Restore policy's networks from a saved model."""
@@ -160,6 +200,11 @@ class Runner(object):
             if not self.all_args.use_render:
                 policy_critic_state_dict = torch.load(str(self.model_dir) + '/critic.pt')
                 self.policy.critic.load_state_dict(policy_critic_state_dict)
+                if getattr(self.policy, "cf_critic", None) is not None:
+                    cf_path = str(self.model_dir) + '/cf_critic.pt'
+                    if os.path.exists(cf_path):
+                        cf_critic_state_dict = torch.load(cf_path)
+                        self.policy.cf_critic.load_state_dict(cf_critic_state_dict)
 
     def log_train(self, train_infos, total_num_steps):
         """

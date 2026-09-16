@@ -81,7 +81,7 @@ python -m onpolicy.scripts.train.train_pso --credit_mode cf_intervention_shuffle
 
 Same-total-budget controls should be run by increasing `--num_env_steps` for
 `mappo` or `cf_no_intervention` to match the extra function evaluations logged
-by `extra_function_evaluations` in intervention mode.
+by `cumulative_intervention_function_evaluations` in intervention mode.
 
 ## Intervention Diagnostics
 
@@ -108,10 +108,22 @@ Training logs include:
 - `function_evaluations`;
 - `extra_function_evaluations`;
 - `extra_eval_ratio`;
+- `cumulative_main_function_evaluations`;
+- `cumulative_intervention_function_evaluations`;
+- `cumulative_train_function_evaluations`;
+- `cumulative_extra_eval_ratio`;
 - `intervention_delta`;
 - `cf_ordinary_loss`;
 - `cf_intervention_loss`;
+- `cf_shuffle_label_changed` for the shuffled-label falsification control;
 - ordinary MAPPO losses.
+
+For formal tables, prefer `episode_metrics.jsonl` in each run directory over
+TensorBoard's exported `summary.json`, because it records every episode with
+explicit cumulative function-evaluation counts.
+The CSV summarizer also reports `total_intervention_count` and
+`max_cf_shuffle_label_changed`, which are more useful than last-episode values
+when interventions are sparse.
 
 The main claim should be evaluated by both search quality and attribution
 accuracy. High predicted contribution decisions should produce larger losses

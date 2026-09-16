@@ -68,8 +68,13 @@ python -m onpolicy.scripts.eval.eval_pso_rules --rule random
 Local summaries are stored under:
 
 ```text
+onpolicy/scripts/results/PSO/<objective>/<credit_mode>/<experiment_name>/run*/episode_metrics.jsonl
 onpolicy/scripts/results/PSO/<objective>/<credit_mode>/<experiment_name>/run*/logs/summary.json
 ```
+
+`episode_metrics.jsonl` is written every training episode and is the preferred
+source for formal analysis. TensorBoard's `summary.json` is kept for scalar
+visualization and as a fallback for older runs.
 
 Summarize runs into CSV:
 
@@ -80,8 +85,13 @@ python -m onpolicy.scripts.eval.summarize_pso_runs --results_dir onpolicy/script
 Main analysis:
 
 - final solution quality: lower `final_global_best` is better;
-- training cost: compare `extra_eval_ratio` and total function evaluations;
+- training cost: compare `cumulative_extra_eval_ratio` and
+  `cumulative_train_function_evaluations`;
 - learning stability: compare median and interquartile range across seeds;
 - credit mechanism value: compare `cf_intervention` against
   `cf_no_intervention` and `cf_intervention_shuffled`;
-- speed only: `fps` is not a research metric.
+- shuffled-label sanity: in `cf_intervention_shuffled`,
+  `max_cf_shuffle_label_changed` should become positive after the first stored
+  intervention label is available;
+- speed only: `fps` is not a research metric and only helps judge whether a run
+  is unexpectedly slow.

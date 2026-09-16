@@ -48,6 +48,8 @@ class R_MAPPO():
         self.cf_epoch = getattr(args, "cf_epoch", 1)
         self.cf_action_dim = getattr(self.policy.act_space, "n", 0)
         self.cf_num_agents = int(getattr(args, "num_agents", getattr(args, "pso_particles", 1)))
+        self.cf_shuffle_label_pool_size = int(getattr(args, "cf_shuffle_label_pool_size", 256))
+        self.cf_shuffle_delta_pool = []
         
         assert (self._use_popart and self._use_valuenorm) == False, ("self._use_popart and self._use_valuenorm can not be set True simultaneously")
         
@@ -109,6 +111,30 @@ class R_MAPPO():
         active_masks = buffer.active_masks[:-1].reshape(-1, 1).astype(np.float32)
         return share_obs, joint_context, agent_ids, actual_actions, returns, active_masks
 
+    def _shuffle_intervention_delta(self, delta):
+        if not self._cf_shuffle_labels:
+            return delta, 0.0, float(len(self.cf_shuffle_delta_pool))
+
+        raw = delta.reshape(-1).copy()
+        shuffled = raw.copy()
+        changed = np.zeros(len(raw), dtype=np.float32)
+        pool_before = float(len(self.cf_shuffle_delta_pool))
+        if len(raw) > 1:
+            perm = np.random.permutation(len(raw))
+            if np.any(perm == np.arange(len(raw))):
+                perm = np.roll(np.arange(len(raw)), 1)
+            shuffled = raw[perm]
+            changed = (perm != np.arange(len(raw))).astype(np.float32)
+        elif len(raw) == 1 and len(self.cf_shuffle_delta_pool) > 0:
+            shuffled[0] = float(np.random.choice(self.cf_shuffle_delta_pool))
+            changed[0] = 1.0
+
+        self.cf_shuffle_delta_pool.extend(float(x) for x in raw)
+        if len(self.cf_shuffle_delta_pool) > self.cf_shuffle_label_pool_size:
+            self.cf_shuffle_delta_pool = self.cf_shuffle_delta_pool[-self.cf_shuffle_label_pool_size:]
+
+        return shuffled.reshape(-1, 1).astype(np.float32), float(np.mean(changed)), pool_before
+
     def train_counterfactual_critic(self, buffer):
         if self.policy.cf_critic is None:
             return {}
@@ -120,7 +146,32 @@ class R_MAPPO():
             "cf_intervention_loss": 0.0,
             "cf_total_loss": 0.0,
             "cf_intervention_count": float(len(interventions)),
+            "cf_shuffle_label_changed": 0.0,
+            "cf_shuffle_label_pool_size": float(len(self.cf_shuffle_delta_pool)),
         }
+
+        intervention_data = None
+        if self._use_cf_intervention_loss and len(interventions) > 0:
+            int_share_obs = np.stack([x["share_obs"] for x in interventions]).astype(np.float32)
+            actual_joint = np.stack([x["joint_actions"] for x in interventions]).astype(np.int64)
+            alt_joint = actual_joint.copy()
+            int_agent_ids = np.asarray([x["agent_id"] for x in interventions], dtype=np.int64)
+            actual_action = np.asarray([x["actual_action"] for x in interventions], dtype=np.int64)
+            alt_action = np.asarray([x["alternative_action"] for x in interventions], dtype=np.int64)
+            alt_joint[np.arange(len(interventions)), int_agent_ids] = alt_action
+            delta = np.asarray([x["delta"] for x in interventions], dtype=np.float32).reshape(-1, 1)
+            delta, changed, pool_before = self._shuffle_intervention_delta(delta)
+            infos["cf_shuffle_label_changed"] = changed
+            infos["cf_shuffle_label_pool_size"] = pool_before
+            intervention_data = (
+                int_share_obs,
+                actual_joint,
+                alt_joint,
+                int_agent_ids,
+                actual_action,
+                alt_action,
+                delta,
+            )
 
         for _ in range(self.cf_epoch):
             q_actual = self.policy.cf_critic(share_obs, joint_context, agent_ids, actual_actions)
@@ -129,18 +180,8 @@ class R_MAPPO():
             ordinary_loss = (((q_actual - target) ** 2) * active).sum() / active.sum().clamp(min=1.0)
 
             intervention_loss = torch.zeros((), **self.tpdv)
-            if self._use_cf_intervention_loss and len(interventions) > 0:
-                int_share_obs = np.stack([x["share_obs"] for x in interventions]).astype(np.float32)
-                actual_joint = np.stack([x["joint_actions"] for x in interventions]).astype(np.int64)
-                alt_joint = actual_joint.copy()
-                int_agent_ids = np.asarray([x["agent_id"] for x in interventions], dtype=np.int64)
-                actual_action = np.asarray([x["actual_action"] for x in interventions], dtype=np.int64)
-                alt_action = np.asarray([x["alternative_action"] for x in interventions], dtype=np.int64)
-                alt_joint[np.arange(len(interventions)), int_agent_ids] = alt_action
-                delta = np.asarray([x["delta"] for x in interventions], dtype=np.float32).reshape(-1, 1)
-                if self._cf_shuffle_labels and len(delta) > 1:
-                    delta = delta[np.random.permutation(len(delta))]
-
+            if intervention_data is not None:
+                int_share_obs, actual_joint, alt_joint, int_agent_ids, actual_action, alt_action, delta = intervention_data
                 q_real = self.policy.cf_critic(int_share_obs, actual_joint, int_agent_ids, actual_action)
                 q_alt = self.policy.cf_critic(int_share_obs, alt_joint, int_agent_ids, alt_action)
                 delta_t = torch.from_numpy(delta).to(**self.tpdv)

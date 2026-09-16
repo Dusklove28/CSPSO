@@ -306,6 +306,7 @@ def get_config():
     parser.add_argument("--cf_epoch", type=int, default=1)
     parser.add_argument("--cf_ordinary_loss_coef", type=float, default=1.0)
     parser.add_argument("--cf_intervention_loss_coef", type=float, default=1.0)
+    parser.add_argument("--cf_shuffle_label_pool_size", type=int, default=256)
     parser.add_argument("--pso_particles", type=int, default=20)
     parser.add_argument("--pso_dim", type=int, default=10)
     parser.add_argument("--pso_generations", type=int, default=100)

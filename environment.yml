@@ -8,5 +8,6 @@ dependencies:
       - numpy
       - torch
       - tensorboardX
+      - tensorboard
       - setproctitle
       - wandb

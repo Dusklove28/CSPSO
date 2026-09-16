@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-import torch.nn.functional as F
 from onpolicy.utils.util import get_shape_from_obs_space, get_shape_from_act_space
 
 
@@ -122,41 +121,6 @@ class SharedReplayBuffer(object):
 
         self.step = (self.step + 1) % self.episode_length
 
-    def chooseinsert(self, share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs,
-                     value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None):
-        """
-        Insert data into the buffer. This insert function is used specifically for Hanabi, which is turn based.
-        :param share_obs: (argparse.Namespace) arguments containing relevant model, policy, and env information.
-        :param obs: (np.ndarray) local agent observations.
-        :param rnn_states_actor: (np.ndarray) RNN states for actor network.
-        :param rnn_states_critic: (np.ndarray) RNN states for critic network.
-        :param actions:(np.ndarray) actions taken by agents.
-        :param action_log_probs:(np.ndarray) log probs of actions taken by agents
-        :param value_preds: (np.ndarray) value function prediction at each step.
-        :param rewards: (np.ndarray) reward collected at each step.
-        :param masks: (np.ndarray) denotes whether the environment has terminated or not.
-        :param bad_masks: (np.ndarray) denotes indicate whether whether true terminal state or due to episode limit
-        :param active_masks: (np.ndarray) denotes whether an agent is active or dead in the env.
-        :param available_actions: (np.ndarray) actions available to each agent. If None, all actions are available.
-        """
-        self.share_obs[self.step] = share_obs.copy()
-        self.obs[self.step] = obs.copy()
-        self.rnn_states[self.step + 1] = rnn_states.copy()
-        self.rnn_states_critic[self.step + 1] = rnn_states_critic.copy()
-        self.actions[self.step] = actions.copy()
-        self.action_log_probs[self.step] = action_log_probs.copy()
-        self.value_preds[self.step] = value_preds.copy()
-        self.rewards[self.step] = rewards.copy()
-        self.masks[self.step + 1] = masks.copy()
-        if bad_masks is not None:
-            self.bad_masks[self.step + 1] = bad_masks.copy()
-        if active_masks is not None:
-            self.active_masks[self.step] = active_masks.copy()
-        if available_actions is not None:
-            self.available_actions[self.step] = available_actions.copy()
-
-        self.step = (self.step + 1) % self.episode_length
-
     def after_update(self):
         """Copy last timestep data to first index. Called after update to model."""
         self.share_obs[0] = self.share_obs[-1].copy()
@@ -168,13 +132,6 @@ class SharedReplayBuffer(object):
         self.active_masks[0] = self.active_masks[-1].copy()
         if self.available_actions is not None:
             self.available_actions[0] = self.available_actions[-1].copy()
-
-    def chooseafter_update(self):
-        """Copy last timestep data to first index. This method is used for Hanabi."""
-        self.rnn_states[0] = self.rnn_states[-1].copy()
-        self.rnn_states_critic[0] = self.rnn_states_critic[-1].copy()
-        self.masks[0] = self.masks[-1].copy()
-        self.bad_masks[0] = self.bad_masks[-1].copy()
 
     def compute_returns(self, next_value, value_normalizer=None):
         """
@@ -219,43 +176,16 @@ class SharedReplayBuffer(object):
                 gae = 0
                 for step in reversed(range(self.rewards.shape[0])):
                     if self._use_popart or self._use_valuenorm:
-                        if self.algo == "mat" or self.algo == "mat_dec":
-                            value_t = value_normalizer.denormalize(self.value_preds[step])
-                            value_t_next = value_normalizer.denormalize(self.value_preds[step + 1])
-                            rewards_t = self.rewards[step]
-
-                            # mean_v_t = np.mean(value_t, axis=-2, keepdims=True)
-                            # mean_v_t_next = np.mean(value_t_next, axis=-2, keepdims=True)
-                            # delta = rewards_t + self.gamma * self.masks[step + 1] * mean_v_t_next - mean_v_t
-
-                            delta = rewards_t + self.gamma * self.masks[step + 1] * value_t_next - value_t
-                            gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
-                            self.advantages[step] = gae
-                            self.returns[step] = gae + value_t
-                        else:
-                            delta = self.rewards[step] + self.gamma * value_normalizer.denormalize(
-                                self.value_preds[step + 1]) * self.masks[step + 1] \
-                                    - value_normalizer.denormalize(self.value_preds[step])
-                            gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
-                            self.returns[step] = gae + value_normalizer.denormalize(self.value_preds[step])
+                        delta = self.rewards[step] + self.gamma * value_normalizer.denormalize(
+                            self.value_preds[step + 1]) * self.masks[step + 1] \
+                                - value_normalizer.denormalize(self.value_preds[step])
+                        gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
+                        self.returns[step] = gae + value_normalizer.denormalize(self.value_preds[step])
                     else:
-                        if self.algo == "mat" or self.algo == "mat_dec":
-                            rewards_t = self.rewards[step]
-                            mean_v_t = np.mean(self.value_preds[step], axis=-2, keepdims=True)
-                            mean_v_t_next = np.mean(self.value_preds[step + 1], axis=-2, keepdims=True)
-                            delta = rewards_t + self.gamma * self.masks[step + 1] * mean_v_t_next - mean_v_t
-
-                            # delta = rewards_t + self.gamma * self.value_preds[step + 1] * \
-                            #         self.masks[step + 1] - self.value_preds[step]
-                            gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
-                            self.advantages[step] = gae
-                            self.returns[step] = gae + self.value_preds[step]
-
-                        else:
-                            delta = self.rewards[step] + self.gamma * self.value_preds[step + 1] * \
-                                    self.masks[step + 1] - self.value_preds[step]
-                            gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
-                            self.returns[step] = gae + self.value_preds[step]
+                        delta = self.rewards[step] + self.gamma * self.value_preds[step + 1] * \
+                                self.masks[step + 1] - self.value_preds[step]
+                        gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
+                        self.returns[step] = gae + self.value_preds[step]
             else:
                 self.returns[-1] = next_value
                 for step in reversed(range(self.rewards.shape[0])):

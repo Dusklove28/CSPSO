@@ -66,6 +66,7 @@ class PSORunner(Runner):
 
             if episode % self.log_interval == 0:
                 end = time.time()
+                fps = int(total_num_steps / max(end - start, 1e-6))
                 print(
                     "\n PSO objective {} credit {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n".format(
                         self.all_args.pso_objective,
@@ -74,11 +75,12 @@ class PSORunner(Runner):
                         episodes,
                         total_num_steps,
                         self.num_env_steps,
-                        int(total_num_steps / max(end - start, 1e-6)),
+                        fps,
                     )
                 )
                 env_infos = self._episode_env_infos(last_infos, intervention_infos)
                 train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
+                train_infos["fps"] = fps
                 print(
                     "final global best is {}, intervention count is {}".format(
                         np.mean(env_infos["final_global_best"]),

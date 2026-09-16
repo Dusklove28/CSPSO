@@ -101,12 +101,8 @@ class Runner(object):
             if not os.path.exists(self.save_dir):
                 os.makedirs(self.save_dir)
 
-        if self.algorithm_name == "mat" or self.algorithm_name == "mat_dec":
-            from onpolicy.algorithms.mat.mat_trainer import MATTrainer as TrainAlgo
-            from onpolicy.algorithms.mat.algorithm.transformer_policy import TransformerPolicy as Policy
-        else:
-            from onpolicy.algorithms.r_mappo.r_mappo import R_MAPPO as TrainAlgo
-            from onpolicy.algorithms.r_mappo.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
+        from onpolicy.algorithms.r_mappo.r_mappo import R_MAPPO as TrainAlgo
+        from onpolicy.algorithms.r_mappo.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
 
         share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[0]
 
@@ -114,20 +110,18 @@ class Runner(object):
         print("share_obs_space: ", self.envs.share_observation_space)
         print("act_space: ", self.envs.action_space)
         
-        # policy network
-        if self.algorithm_name == "mat" or self.algorithm_name == "mat_dec":
-            self.policy = Policy(self.all_args, self.envs.observation_space[0], share_observation_space, self.envs.action_space[0], self.num_agents, device = self.device)
-        else:
-            self.policy = Policy(self.all_args, self.envs.observation_space[0], share_observation_space, self.envs.action_space[0], device = self.device)
+        self.policy = Policy(
+            self.all_args,
+            self.envs.observation_space[0],
+            share_observation_space,
+            self.envs.action_space[0],
+            device=self.device,
+        )
 
         if self.model_dir is not None:
             self.restore(self.model_dir)
 
-        # algorithm
-        if self.algorithm_name == "mat" or self.algorithm_name == "mat_dec":
-            self.trainer = TrainAlgo(self.all_args, self.policy, self.num_agents, device = self.device)
-        else:
-            self.trainer = TrainAlgo(self.all_args, self.policy, device = self.device)
+        self.trainer = TrainAlgo(self.all_args, self.policy, device=self.device)
         
         # buffer
         self.buffer = SharedReplayBuffer(self.all_args,
@@ -159,15 +153,11 @@ class Runner(object):
     def compute(self):
         """Calculate returns for the collected data."""
         self.trainer.prep_rollout()
-        if self.algorithm_name == "mat" or self.algorithm_name == "mat_dec":
-            next_values = self.trainer.policy.get_values(np.concatenate(self.buffer.share_obs[-1]),
-                                                        np.concatenate(self.buffer.obs[-1]),
-                                                        np.concatenate(self.buffer.rnn_states_critic[-1]),
-                                                        np.concatenate(self.buffer.masks[-1]))
-        else:
-            next_values = self.trainer.policy.get_values(np.concatenate(self.buffer.share_obs[-1]),
-                                                        np.concatenate(self.buffer.rnn_states_critic[-1]),
-                                                        np.concatenate(self.buffer.masks[-1]))
+        next_values = self.trainer.policy.get_values(
+            np.concatenate(self.buffer.share_obs[-1]),
+            np.concatenate(self.buffer.rnn_states_critic[-1]),
+            np.concatenate(self.buffer.masks[-1]),
+        )
         next_values = np.array(np.split(_t2n(next_values), self.n_rollout_threads))
         self.buffer.compute_returns(next_values, self.trainer.value_normalizer)
     
@@ -180,31 +170,25 @@ class Runner(object):
 
     def save(self, episode=0):
         """Save policy's actor and critic networks."""
-        if self.algorithm_name == "mat" or self.algorithm_name == "mat_dec":
-            self.policy.save(self.save_dir, episode)
-        else:
-            policy_actor = self.trainer.policy.actor
-            torch.save(policy_actor.state_dict(), str(self.save_dir) + "/actor.pt")
-            policy_critic = self.trainer.policy.critic
-            torch.save(policy_critic.state_dict(), str(self.save_dir) + "/critic.pt")
-            if getattr(self.trainer.policy, "cf_critic", None) is not None:
-                torch.save(self.trainer.policy.cf_critic.state_dict(), str(self.save_dir) + "/cf_critic.pt")
+        policy_actor = self.trainer.policy.actor
+        torch.save(policy_actor.state_dict(), str(self.save_dir) + "/actor.pt")
+        policy_critic = self.trainer.policy.critic
+        torch.save(policy_critic.state_dict(), str(self.save_dir) + "/critic.pt")
+        if getattr(self.trainer.policy, "cf_critic", None) is not None:
+            torch.save(self.trainer.policy.cf_critic.state_dict(), str(self.save_dir) + "/cf_critic.pt")
 
     def restore(self, model_dir):
         """Restore policy's networks from a saved model."""
-        if self.algorithm_name == "mat" or self.algorithm_name == "mat_dec":
-            self.policy.restore(model_dir)
-        else:
-            policy_actor_state_dict = torch.load(str(self.model_dir) + '/actor.pt')
-            self.policy.actor.load_state_dict(policy_actor_state_dict)
-            if not self.all_args.use_render:
-                policy_critic_state_dict = torch.load(str(self.model_dir) + '/critic.pt')
-                self.policy.critic.load_state_dict(policy_critic_state_dict)
-                if getattr(self.policy, "cf_critic", None) is not None:
-                    cf_path = str(self.model_dir) + '/cf_critic.pt'
-                    if os.path.exists(cf_path):
-                        cf_critic_state_dict = torch.load(cf_path)
-                        self.policy.cf_critic.load_state_dict(cf_critic_state_dict)
+        policy_actor_state_dict = torch.load(str(self.model_dir) + '/actor.pt')
+        self.policy.actor.load_state_dict(policy_actor_state_dict)
+        if not self.all_args.use_render:
+            policy_critic_state_dict = torch.load(str(self.model_dir) + '/critic.pt')
+            self.policy.critic.load_state_dict(policy_critic_state_dict)
+            if getattr(self.policy, "cf_critic", None) is not None:
+                cf_path = str(self.model_dir) + '/cf_critic.pt'
+                if os.path.exists(cf_path):
+                    cf_critic_state_dict = torch.load(cf_path)
+                    self.policy.cf_critic.load_state_dict(cf_critic_state_dict)
 
     def log_train(self, train_infos, total_num_steps):
         """

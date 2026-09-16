@@ -11,13 +11,13 @@ def get_version() -> str:
     return init[init.index("__version__") + 2][1:-1]
 
 setup(
-    name="onpolicy",  # Replace with your own username
+    name="cspso",
     version=get_version(),
-    description="on-policy algorithms of marlbenchmark",
+    description="Sparse-intervention credit assignment for PSO with shared-parameter MAPPO",
     long_description=open("README.md", encoding="utf8").read(),
     long_description_content_type="text/markdown",
-    author="zoeyuchao",
-    author_email="zoeyuchao@gmail.com",
+    author="Dusklove28",
+    author_email="",
     packages=setuptools.find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",
@@ -28,6 +28,6 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    keywords="multi-agent reinforcement learning platform pytorch",
-    python_requires='>=3.6',
+    keywords="particle swarm optimization multi-agent reinforcement learning credit assignment",
+    python_requires='>=3.10',
 )

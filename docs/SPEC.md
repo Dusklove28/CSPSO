@@ -146,7 +146,7 @@ Q_real - Q_alt = delta
 - 结果写入 `runs/<YYYY-MM-DD>/PSO/...`，每个 Run 必须有 `run_manifest.json`。
 - 主批次完成后，根据真实累计函数评估数生成普通采样的同成本补跑计划；不在主批次开始前估算替代实际账目。
 
-执行入口为 `scripts/run_formal_pso.ps1`。该脚本运行四函数、四模式和五种子，共 80 次训练，并在结束后生成 `pso_summary.csv`。
+执行入口为 `python -m onpolicy.scripts.train.train_pso`。正式命令在当前已激活的 `cspso` PowerShell 中直接循环四函数、四模式和五种子，共 80 次训练；结束后使用 `summarize_pso_runs` 生成 `pso_summary.csv`。
 
 ### S13：当前未冻结事项
 

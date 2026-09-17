@@ -3,7 +3,8 @@
 最后更新：2026-09-17  
 实际仓库：`E:\code\MAPPO\on-policy`  
 远端：`cspso` -> `https://github.com/Dusklove28/CSPSO.git`  
-最近已提交代码基线：`39bdd2d`  
+本轮验收所依据的算法代码基线：`39bdd2d`  
+当前文档与代码版本：以包含本文件的 Git 提交为准，使用 `git rev-parse HEAD` 获取。  
 当前阶段：A1 最小正确性验收，尚未开始正式性能实验。
 
 ## 已实现

@@ -1,7 +1,11 @@
 #!/usr/bin/env python
+import json
 import os
+import platform
 import socket
+import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +24,58 @@ try:
     import wandb
 except ImportError:
     wandb = None
+
+
+def _timestamp():
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _git_metadata(repo_root):
+    def run_git(*args):
+        result = subprocess.run(
+            ["git", *args],
+            cwd=str(repo_root),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    status = run_git("status", "--porcelain")
+    return {
+        "commit": run_git("rev-parse", "HEAD"),
+        "branch": run_git("branch", "--show-current"),
+        "dirty": bool(status) if status is not None else None,
+    }
+
+
+def _write_manifest(path, all_args, device, status, started_at, error=None):
+    repo_root = Path(__file__).resolve().parents[3]
+    manifest = {
+        "schema_version": 1,
+        "status": status,
+        "started_at": started_at,
+        "updated_at": _timestamp(),
+        "command": [sys.executable, "-m", "onpolicy.scripts.train.train_pso", *sys.argv[1:]],
+        "config": vars(all_args),
+        "git": _git_metadata(repo_root),
+        "runtime": {
+            "hostname": socket.gethostname(),
+            "platform": platform.platform(),
+            "python": platform.python_version(),
+            "numpy": np.__version__,
+            "torch": torch.__version__,
+            "device": str(device),
+            "cuda_available": torch.cuda.is_available(),
+        },
+    }
+    if error is not None:
+        manifest["error"] = error
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=True, indent=2, sort_keys=True)
+    os.replace(temp_path, path)
 
 
 def make_train_env(all_args):
@@ -111,8 +167,13 @@ def main(args):
         device = torch.device("cpu")
         torch.set_num_threads(all_args.n_training_threads)
 
+    results_root = (
+        Path(all_args.results_dir).expanduser()
+        if all_args.results_dir is not None
+        else Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[0] + "/results")
+    )
     run_dir = (
-        Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[0] + "/results")
+        results_root
         / all_args.env_name
         / all_args.pso_objective
         / all_args.credit_mode
@@ -149,6 +210,11 @@ def main(args):
         if not run_dir.exists():
             os.makedirs(str(run_dir))
 
+    artifact_dir = Path(wandb.run.dir) if all_args.use_wandb else run_dir
+    manifest_path = artifact_dir / "run_manifest.json"
+    started_at = _timestamp()
+    _write_manifest(manifest_path, all_args, device, "running", started_at)
+
     if setproctitle is not None:
         setproctitle.setproctitle(
             "{}-{}-{}@{}".format(
@@ -177,18 +243,25 @@ def main(args):
 
     from onpolicy.runner.shared.pso_runner import PSORunner as Runner
 
-    runner = Runner(config)
-    runner.run()
-
-    envs.close()
-    if all_args.use_eval and eval_envs is not envs:
-        eval_envs.close()
-
-    if all_args.use_wandb:
-        run.finish()
+    runner = None
+    try:
+        runner = Runner(config)
+        runner.run()
+    except Exception as exc:
+        _write_manifest(manifest_path, all_args, device, "failed", started_at, repr(exc))
+        raise
     else:
-        runner.writter.flush()
-        runner.writter.close()
+        _write_manifest(manifest_path, all_args, device, "completed", started_at)
+    finally:
+        envs.close()
+        if all_args.use_eval and eval_envs is not envs:
+            eval_envs.close()
+
+        if all_args.use_wandb:
+            run.finish()
+        elif runner is not None:
+            runner.writter.flush()
+            runner.writter.close()
 
 
 if __name__ == "__main__":

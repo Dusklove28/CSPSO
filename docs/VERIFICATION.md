@@ -15,6 +15,7 @@
 | V07 | 标签打乱处理生效且科学对照公平 | PARTIAL | 历史标签池和 `cf_shuffle_label_changed` 已实现 | 数值/样本对应检查及策略阶段、尺度、函数实例分布审查 |
 | V08 | 候选 Q 不泄露残留实际动作 | NOT RUN | `CounterfactualCritic` 和候选联合动作替换已实现 | 固定其他输入的功能性不变量测试 |
 | V09 | 策略更新且评估冻结 | NOT RUN | 训练与 `torch.no_grad()` eval 路径已实现 | 参数更新和评估前后参数不变断言 |
+| V10 | 日期结果目录与运行清单 | PASS | `--results_dir runs/2026-09-17-smoke` 短运行；见 `docs/evidence/2026-09-17-results-root-manifest.txt` | 正式运行应在干净提交上执行，使 manifest 的 `dirty=false` |
 | R01 | 归因符号、排序和校准 | RESEARCH | 尚无独立诊断集 | 多状态、多未来种子参考效应与置信区间 |
 | R02 | 跨粒子和长期效应 | RESEARCH | 传播日志字段部分存在 | 将受影响粒子和时间延迟转为预注册指标 |
 | R03 | 预算公平的优化收益 | RESEARCH | 累计预算字段已实现 | 四模式、多种子、同总函数评估实验 |

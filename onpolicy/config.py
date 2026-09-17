@@ -161,6 +161,12 @@ def get_config():
                         default='mappo', choices=["mappo"])
 
     parser.add_argument("--experiment_name", type=str, default="check", help="an identifier to distinguish different experiment.")
+    parser.add_argument(
+        "--results_dir",
+        type=str,
+        default=None,
+        help="optional artifact root; PSO results are written below <root>/PSO",
+    )
     parser.add_argument("--seed", type=int, default=1, help="Random seed for numpy/torch")
     parser.add_argument("--cuda", action='store_false', default=True, help="by default True, will use GPU to train; or else will use CPU;")
     parser.add_argument("--cuda_deterministic",

@@ -82,9 +82,11 @@ class PSORunner(Runner):
             train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
             train_infos["fps"] = fps
 
-            if episode % self.eval_interval == 0 and self.use_eval:
-                self.eval(total_num_steps)
+            should_eval = episode % self.eval_interval == 0 or episode == episodes - 1
+            if should_eval and self.use_eval:
+                eval_env_infos = self.eval(total_num_steps)
                 env_infos = self._episode_env_infos(last_infos, intervention_infos)
+                env_infos.update(eval_env_infos)
 
             self._write_episode_metrics(
                 episode,
@@ -346,6 +348,12 @@ class PSORunner(Runner):
             "experiment": self.all_args.experiment_name,
             "seed": int(self.all_args.seed),
             "final_global_best": self._mean_or_empty(env_infos.get("final_global_best", [])),
+            "eval_final_global_best": self._mean_or_empty(
+                env_infos.get("eval_final_global_best", [])
+            ),
+            "eval_final_global_best_values": self._jsonable(
+                env_infos.get("eval_final_global_best", [])
+            ),
             "function_evaluations": self._mean_or_empty(env_infos.get("function_evaluations", [])),
             "extra_function_evaluations": self._mean_or_empty(env_infos.get("extra_function_evaluations", [])),
             "extra_eval_ratio": self._mean_or_empty(env_infos.get("extra_eval_ratio", [])),
@@ -425,3 +433,4 @@ class PSORunner(Runner):
         }
         print("eval final global best: " + str(np.mean(eval_episode_best)))
         self.log_env(eval_env_infos, total_num_steps)
+        return eval_env_infos

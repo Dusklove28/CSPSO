@@ -1,0 +1,33 @@
+Date: 2026-09-17
+Entry point: python -m onpolicy.scripts.eval.preflight_pso
+Base commit before the verified worktree changes: 552c038
+
+Configuration used internally:
+- objective: sphere
+- particles: 4
+- dimensions: 2
+- generations: 5
+- training environment steps: 10 (2 episodes)
+- credit mode: cf_intervention
+- evaluation interval: 1 episode
+- evaluation episodes per checkpoint: 2
+- PPO epochs: 1
+- device: CPU
+
+Observed result:
+PASS environment snapshot, paired replay, branch restoration, and evaluation counts
+PASS training update, final evaluation, accounting, save/load, frozen eval, and candidate replacement
+PSO preflight passed
+Process exit code: 0
+
+Coverage:
+- exact repeated trajectory from the same snapshot and RNG state;
+- alternative branch followed by exact restoration of the main endpoint;
+- environment and JSONL accounting identities for main, intervention, eval, train, and total evaluations;
+- final training episode has an evaluation event;
+- final Actor differs from the same-seed initialized Actor;
+- saved Actor, Critic, and counterfactual Critic reload exactly;
+- evaluation changes no model parameters;
+- every candidate-Q call replaces the target agent action in the joint action context.
+
+This is engineering evidence only. It does not show that causal credit estimates or optimization performance are better.

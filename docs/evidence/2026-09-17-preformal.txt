@@ -1,0 +1,79 @@
+CSPSO pre-formal verification evidence
+Date: 2026-09-17 (Asia/Shanghai)
+Repository: E:\code\MAPPO\on-policy
+Verified base commit: 39bdd2d
+Working-tree scope: TensorBoard scalar grouping plus project research documents
+
+1. Syntax check
+
+Command:
+  conda run -n cspso python -m compileall -q onpolicy
+
+Result:
+  PASS (exit code 0, no output)
+
+2. Intervention invariants
+
+Command:
+  conda run -n cspso python -m onpolicy.scripts.eval.diagnose_pso_interventions
+
+Result:
+  same-action paired delta: 0
+  c2=0 leader-change delta: 0
+  diagnosis passed
+
+3. Small intervention pipeline smoke
+
+Command:
+  conda run -n cspso python -m onpolicy.scripts.train.train_pso
+    --credit_mode cf_intervention
+    --experiment_name smoke_preformal_tb
+    --pso_particles 4 --pso_dim 2 --pso_generations 5
+    --num_env_steps 10 --n_rollout_threads 1
+    --ppo_epoch 1 --num_mini_batch 1
+    --log_interval 1 --use_wandb --cuda
+
+Result:
+  PASS, two training episodes completed.
+  Episode 0: final_global_best=2.1735887541000167, intervention_count=1,
+             cumulative_extra_eval_ratio=0.6666666666666666.
+  Episode 1: final_global_best=3.545279656655765, intervention_count=0,
+             cumulative_extra_eval_ratio=0.3333333333333333.
+  Final cumulative counts: main=48, intervention=16, eval=0, total=64.
+
+4. TensorBoard grouping
+
+Inspection:
+  EventAccumulator loaded the single run1/logs directory.
+
+Result:
+  scalar_tag_count=26
+  final_global_best_points=[(5, 2.173588752746582),
+                            (10, 3.5452797412872314)]
+  No per-metric TensorBoard subdirectories were created.
+  No empty summary.json was created.
+
+5. Result summarizer
+
+Command:
+  conda run -n cspso python -m onpolicy.scripts.eval.summarize_pso_runs
+    --results_dir onpolicy\scripts\results\PSO
+    --output verification_summary.csv
+
+Result:
+  wrote 1 runs to verification_summary.csv
+  Parsed source: episode_metrics.jsonl
+  Parsed final values: last_final_global_best=3.545279656655765,
+                       total_intervention_count=1,
+                       cumulative_train_function_evaluations=64.
+
+Cleanup:
+  The smoke result directory and verification_summary.csv were deleted after
+  recording this evidence. This file is evidence of an engineering smoke test,
+  not evidence that the research method improves optimization or attribution.
+
+Not covered:
+  V01 full state/trajectory restoration, V04 random-stream trace, V05
+  independent objective-call accounting, V06 model reload, V07 shuffled-label
+  fairness, V08 action-residue invariant, V09 parameter update/frozen eval, and
+  all research-level attribution and performance claims.

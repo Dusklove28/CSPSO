@@ -119,11 +119,23 @@ Training logs include:
 - ordinary MAPPO losses.
 
 For formal tables, prefer `episode_metrics.jsonl` in each run directory over
-TensorBoard's exported `summary.json`, because it records every episode with
-explicit cumulative function-evaluation counts.
+TensorBoard event files, because it records every episode with explicit
+cumulative function-evaluation counts. The summarizer can still read legacy
+`summary.json` files.
 The CSV summarizer also reports `total_intervention_count` and
 `max_cf_shuffle_label_changed`, which are more useful than last-episode values
 when interventions are sparse.
+
+TensorBoard is a visualization aid, not the formal source table. Start it with:
+
+```powershell
+tensorboard --logdir onpolicy\scripts\results\PSO --port 6006
+```
+
+Keep the server terminal open. Under the scalar cards, lower
+`eval_final_global_best` and `final_global_best` are better. TensorBoard's
+horizontal step is an environment-step counter rather than a function-evaluation
+budget, so cost-matched conclusions must use the cumulative evaluation fields.
 
 The main claim should be evaluated by both search quality and attribution
 accuracy. High predicted contribution decisions should produce larger losses

@@ -3,6 +3,14 @@
 Sparse-intervention credit assignment for particle swarm optimization, built on
 a compact shared-parameter MAPPO training loop.
 
+Project governance and research evidence are maintained in:
+
+- `AGENTS.md`: collaboration and evidence rules;
+- `docs/SPEC.md`: current algorithm and budget definitions;
+- `docs/STATUS.md`: verified, unverified, and next work;
+- `docs/VERIFICATION.md`: executable acceptance checks;
+- `docs/REFERENCES.md`: literature claims and novelty boundaries.
+
 ## Scope
 
 This repository is focused on Credit Assignment PSO. The original MAPPO game
@@ -69,12 +77,21 @@ Local summaries are stored under:
 
 ```text
 onpolicy/scripts/results/PSO/<objective>/<credit_mode>/<experiment_name>/run*/episode_metrics.jsonl
-onpolicy/scripts/results/PSO/<objective>/<credit_mode>/<experiment_name>/run*/logs/summary.json
+onpolicy/scripts/results/PSO/<objective>/<credit_mode>/<experiment_name>/run*/logs/events.out.tfevents.*
 ```
 
 `episode_metrics.jsonl` is written every training episode and is the preferred
-source for formal analysis. TensorBoard's `summary.json` is kept for scalar
-visualization and as a fallback for older runs.
+source for formal analysis. TensorBoard reads the event file under `logs/`.
+The summarizer retains compatibility with legacy `summary.json` files.
+
+Start TensorBoard in a dedicated terminal and leave that terminal running:
+
+```powershell
+tensorboard --logdir onpolicy\scripts\results\PSO --port 6006
+```
+
+New runs keep all scalar tags under one TensorBoard run. A one-point chart is
+expected only for a run that logged once, such as a very short smoke test.
 
 Summarize runs into CSV:
 

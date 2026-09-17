@@ -82,7 +82,8 @@ class PSORunner(Runner):
             train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
             train_infos["fps"] = fps
 
-            should_eval = episode % self.eval_interval == 0 or episode == episodes - 1
+            completed_episodes = episode + 1
+            should_eval = completed_episodes % self.eval_interval == 0 or completed_episodes == episodes
             if should_eval and self.use_eval:
                 eval_env_infos = self.eval(total_num_steps)
                 env_infos = self._episode_env_infos(last_infos, intervention_infos)

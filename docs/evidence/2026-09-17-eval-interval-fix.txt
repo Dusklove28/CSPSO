@@ -1,0 +1,29 @@
+Date: 2026-09-17
+Issue: evaluation interval was checked against the zero-based episode index.
+
+Observed before the fix:
+- evaluation records appeared after completed episodes 1, 11, 21, and 31;
+- the confirmed protocol requires episodes 10, 20, ..., 200;
+- the user stopped the first Sphere/MAPPO/seed 1 run at approximately episode 31.
+
+Fix:
+- evaluate when (episode + 1) is divisible by eval_interval;
+- always evaluate the final completed episode;
+- avoid duplicate evaluation when the final episode is also an interval boundary.
+
+Verification command:
+conda run -n cspso python -m onpolicy.scripts.eval.preflight_pso
+
+Boundary configuration:
+- 3 training episodes;
+- evaluation interval 2;
+- episode 1 has no evaluation;
+- episode 2 has an interval evaluation;
+- episode 3 has a final-checkpoint evaluation.
+
+Result:
+PSO preflight passed
+Process exit code: 0
+
+The incomplete pre-fix artifact was removed from the formal result tree and archived at:
+runs/_aborted/2026-09-17_sphere_mappo_seed1_run1_offbyone

@@ -7,9 +7,9 @@ Configuration used internally:
 - particles: 4
 - dimensions: 2
 - generations: 5
-- training environment steps: 10 (2 episodes)
+- training environment steps: 15 (3 episodes)
 - credit mode: cf_intervention
-- evaluation interval: 1 episode
+- evaluation interval: 2 episodes
 - evaluation episodes per checkpoint: 2
 - PPO epochs: 1
 - device: CPU
@@ -24,7 +24,7 @@ Coverage:
 - exact repeated trajectory from the same snapshot and RNG state;
 - alternative branch followed by exact restoration of the main endpoint;
 - environment and JSONL accounting identities for main, intervention, eval, train, and total evaluations;
-- final training episode has an evaluation event;
+- evaluation is absent after episode 1, present after interval episode 2, and present at final episode 3;
 - final Actor differs from the same-seed initialized Actor;
 - saved Actor, Critic, and counterfactual Critic reload exactly;
 - evaluation changes no model parameters;

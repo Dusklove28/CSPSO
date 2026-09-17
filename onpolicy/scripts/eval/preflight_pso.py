@@ -29,13 +29,13 @@ def _training_args(results_dir):
         "--pso_particles", "4",
         "--pso_dim", "2",
         "--pso_generations", "5",
-        "--num_env_steps", "10",
+        "--num_env_steps", "15",
         "--n_rollout_threads", "1",
         "--n_eval_rollout_threads", "1",
         "--ppo_epoch", "1",
         "--num_mini_batch", "1",
         "--use_eval",
-        "--eval_interval", "1",
+        "--eval_interval", "2",
         "--eval_episodes", "2",
         "--log_interval", "1",
         "--save_interval", "10",
@@ -155,12 +155,13 @@ def verify_training(results_dir):
 
     with open(run_dir / "episode_metrics.jsonl", "r", encoding="utf-8") as f:
         records = [json.loads(line) for line in f if line.strip()]
-    assert len(records) == 2
+    assert len(records) == 3
     per_episode_main = 4 * (1 + 5)
     per_eval_event = 2 * per_episode_main
+    expected_eval_events = [0, 1, 2]
     for index, record in enumerate(records, start=1):
         assert record["cumulative_main_function_evaluations"] == index * per_episode_main
-        assert record["cumulative_eval_function_evaluations"] == index * per_eval_event
+        assert record["cumulative_eval_function_evaluations"] == expected_eval_events[index - 1] * per_eval_event
         assert record["cumulative_train_function_evaluations"] == (
             record["cumulative_main_function_evaluations"]
             + record["cumulative_intervention_function_evaluations"]
@@ -169,7 +170,9 @@ def verify_training(results_dir):
             record["cumulative_train_function_evaluations"]
             + record["cumulative_eval_function_evaluations"]
         )
-    assert records[-1]["total_num_steps"] == 10
+    assert records[0]["eval_final_global_best"] == ""
+    assert records[1]["eval_final_global_best"] != ""
+    assert records[-1]["total_num_steps"] == 15
     assert records[-1]["eval_final_global_best"] != ""
     assert len(records[-1]["eval_final_global_best_values"]) == 2
 
@@ -214,7 +217,7 @@ def verify_training(results_dir):
             "critic": _clone_module(runner.policy.critic),
             "cf": _clone_module(runner.policy.cf_critic),
         }
-        runner.eval(total_num_steps=10)
+        runner.eval(total_num_steps=15)
         assert _state_dict_equal(frozen["actor"], _clone_module(runner.policy.actor))
         assert _state_dict_equal(frozen["critic"], _clone_module(runner.policy.critic))
         assert _state_dict_equal(frozen["cf"], _clone_module(runner.policy.cf_critic))
